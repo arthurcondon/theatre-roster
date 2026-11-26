@@ -243,7 +243,7 @@ function draw(){
   if(tab==='roster'||(!isAdmin&&tab==='setup'))tab='cal';
   if(!draft||draft.id!==me)loadDraft(c);
   const bc=alertCount(c),oc=isAdmin?needCount(c):0;
-  let h='<div class="hero"><div class="row"><div><div class="brand"><div><div class="ey">Macquarie University Hospital</div><h1>Theatre Roster</h1></div></div></div><span class="sp"></span><img class="logo" src="logo.png" alt="Macquarie University Hospital" onerror="this.remove()"><button class="bell" data-act="bell" aria-label="Notifications">'+IC.bell+(bc?'<i>'+bc+'</i>':'')+'</button></div>'+((tab==='cal'&&isAdmin)||tab==='avail'?'<div class="fn"><button data-act="fn" data-v="-14" aria-label="Previous fortnight">‹</button><div class="mid">'+esc(dayLabel(dates[0]))+' – '+esc(dayLabel(dates[9]))+'<small>'+c.staff.filter(s=>hasEntries(s,dates)).length+' of '+c.staff.length+' have entered availability</small></div><button data-act="fn" data-v="14" aria-label="Next fortnight">›</button></div>':'')+'</div>';
+  let h='<div class="hero"><div class="row"><div><div class="brand"><div><div class="ey">Macquarie University Hospital</div><h1>Theatre Roster</h1></div></div></div><span class="sp"></span><img class="logo" src="logo.png" alt="Macquarie University Hospital" onerror="this.remove()"><button class="bell" data-act="bell" aria-label="Notifications">'+IC.bell+(bc?'<i>'+bc+'</i>':'')+'</button></div>'+(tab==='cal'||tab==='avail'?'<div class="fn"><button data-act="fn" data-v="-14" aria-label="Previous fortnight">‹</button><div class="mid">'+esc(dayLabel(dates[0]))+' – '+esc(dayLabel(dates[9]))+''+((isAdmin||tab==='avail')?'<small>'+c.staff.filter(s=>hasEntries(s,dates)).length+' of '+c.staff.length+' have entered availability</small>':'')+'</div><button data-act="fn" data-v="14" aria-label="Next fortnight">›</button></div>':'')+'</div>';
   if(bell)h+=bellPanel(c);
   if(!c.staff.length&&tab!=='setup')h+='<div class="banner">'+(isAdmin?'No staff yet. Open Setup to add your team.':'The manager hasn’t added the team yet.')+'</div>';
   h+=tab==='cal'?vCal(c,dates):tab==='avail'?vAvail(c,dates):tab==='fb'?vFb(c,dates):vSetup(c,dates);
@@ -261,7 +261,8 @@ const fmtT=x=>{const h=Math.floor(x),m=Math.round((x-h)*60);return fmtH(h%24)+(m
 const fmtDur=h=>(Math.round(h*10)/10)+'h';
 const myAsg=d=>((roster[d]&&roster[d].a)||[]).find(x=>x.s===me);
 const actTag=(d,s,t)=>{const a=acts[d+'_'+s];if(!a)return '';const ot=a.en-a.st-8;return '<span class="tag '+(ot>0?'ot':'')+'">worked '+fmtT(a.st)+'–'+fmtT(a.en)+(ot>0?' · +'+fmtDur(ot)+' OT':'')+'</span>'};
-const effAsg=d=>sheetDraft[d]||((roster[d]&&roster[d].a)||[]);
+const visDay=d=>{const p=(cfg&&cfg.published)||'';return isAdmin||(!!p&&d<=p)};
+const effAsg=d=>sheetDraft[d]||(visDay(d)?((roster[d]&&roster[d].a)||[]):[]);
 function monthOf(ym){const p=ym.split('-').map(Number),first=new Date(p[0],p[1]-1,1),last=new Date(p[0],p[1],0);const s=new Date(first);s.setDate(1-((first.getDay()+6)%7));const e=new Date(last);e.setDate(last.getDate()+((7-last.getDay())%7));const r=[];for(const d=new Date(s);d<=e;d.setDate(d.getDate()+1))r.push(iso(d));return r}
 function isWorking(d,c){
   const g=parse(d).getDay();if(g>=1&&g<=5)return true;
@@ -274,17 +275,29 @@ function caseInputs(d,cs){
   const tot=cs.n!=null?cs.n:'';
   return '<div class="row wrap" style="margin:6px 0 2px"><label class="sub">Total cases <input type="number" min="0" data-ch="ctot" data-d="'+d+'" value="'+esc(tot)+'"></label><label class="sub">Total theatres <input type="number" min="0" data-ch="th" data-d="'+d+'" value="'+(cs.th!=null?esc(cs.th):'')+'" style="width:70px"></label></div><div class="row wrap" style="margin:4px 0 2px"><label class="sub">\u2600 Morning cases <input type="number" min="0" data-ch="cam" data-d="'+d+'" value="'+(cs.am!=null?esc(cs.am):'')+'"></label><label class="sub">\u263e Afternoon cases <input type="number" min="0" data-ch="cpm" data-d="'+d+'" value="'+(cs.pm!=null?esc(cs.pm):'')+'"></label></div><div class="sub">Enter the total, or just morning and afternoon (the total is added up for you).</div>';
 }
-function homeCards(c){
-  const today=iso(new Date()),first=isWorking(today,c)?today:nextWorking(today,c),second=nextWorking(first,c);
-  const lab=d=>d===today?'Today':d===addDays(today,1)?'Tomorrow':parse(d).toLocaleDateString('en-AU',{weekday:'long'});
-  return '<div class="two">'+[first,second].map(d=>homeCard(c,d,lab(d),today)).join('')+'</div>';
+function prevWorking(d,c){let x=addDays(d,-1);for(let i=0;i<10;i++){if(isWorking(x,c))return x;x=addDays(x,-1)}return addDays(d,-1)}
+function dayPager(c){
+  const today=iso(new Date()),first=isWorking(today,c)?today:nextWorking(today,c);
+  const days=[];let x=first;for(let i=0;i<10;i++){days.push(x);x=nextWorking(x,c)}
+  let h='<div class="pager" data-pager="1"><div class="row"><button class="pg" data-act="dstep" data-v="-1" aria-label="Previous day">\u2039</button><div class="pgm"><b>'+esc(dayLabel(calSel))+'</b></div><button class="pg" data-act="dstep" data-v="1" aria-label="Next day">\u203a</button>'+(calSel!==first?'<button class="btn sm" data-act="cday" data-d="'+first+'">Today</button>':'')+'</div>';
+  h+='<div class="strip">'+days.map(d=>'<button class="'+(d===calSel?'on':'')+(d===today?' td':'')+'" data-act="cday" data-d="'+d+'"><small>'+esc(parse(d).toLocaleDateString('en-AU',{weekday:'short'}))+'</small>'+parse(d).getDate()+'</button>').join('')+'</div></div>';
+  return h;
 }
-function homeCard(c,d,label,today){
-  const R=dayReport(d,c),cs=cases[d]||{},late=new Date().getHours()>=13,prompt=isAdmin&&d>today&&!casesIn(d);
-  let h='<div class="card hc'+(prompt&&late?' due':'')+'" data-hc="'+d+'"><div class="row"><div><div class="hl">'+esc(label)+'</div><div class="sub">'+esc(dayLabel(d))+'</div></div><span class="sp"></span>'+statusChip(R,'all')+'</div>';
+function homeCards(c){
+  const today=iso(new Date());
+  if(!calSel)calSel=isWorking(today,c)?today:nextWorking(today,c);
+  const lab=d=>d===today?'Today':d===addDays(today,1)?'Tomorrow':parse(d).toLocaleDateString('en-AU',{weekday:'long'});
+  let h=dayPager(c);
+  if(isAdmin)return h+dayCard(c,calSel);
+  return h+'<div class="two">'+[calSel,nextWorking(calSel,c)].map(d=>homeCard(c,d,lab(d))).join('')+'</div>';
+}
+function homeCard(c,d,label){
+  const R=dayReport(d,c,effAsg(d)),pub=visDay(d);
+  let h='<div class="card hc" data-hc="'+d+'"><div class="row"><div><div class="hl">'+esc(label)+'</div><div class="sub">'+esc(dayLabel(d))+'</div></div></div>';
+  if(!pub)return h+'<div class="sub" style="margin-top:10px">This day\u2019s roster hasn\u2019t been published yet.</div></div>';
   ['am','pm'].forEach(p=>{
-    const st=partStats(R,p),list=R.asg.filter(x=>inPart(x.t,p)).sort((a,b)=>a.t-b.t||nameOf(c,a.s).localeCompare(nameOf(c,b.s)));
-    h+='<div class="half '+p+'"><div class="hh">'+(p==='am'?'\u2600 Morning':'\u263e Afternoon')+'<span>'+st.got+(st.need&&!R.est?' of '+st.need:'')+'</span></div>';
+    const list=R.asg.filter(x=>inPart(x.t,p)).sort((a,b)=>a.t-b.t||nameOf(c,a.s).localeCompare(nameOf(c,b.s)));
+    h+='<div class="half '+p+'"><div class="hh">'+(p==='am'?'\u2600 Morning':'\u263e Afternoon')+'<span>'+list.length+'</span></div>';
     if(!list.length)h+='<div class="sub">Nobody rostered.</div>';
     list.forEach(x=>{
       const s=c.all.find(z=>z.id===x.s);if(!s)return;
@@ -293,14 +306,11 @@ function homeCard(c,d,label,today){
     });
     h+='</div>';
   });
-  if(isAdmin){
-    h+=(prompt?'<div class="banner pri" style="margin:12px 0 6px"><b>Enter '+esc(label.toLowerCase()==='tomorrow'?'tomorrow\u2019s':label+'\u2019s')+' cases.</b> The roster will tell you if the team is right.</div>':'<div class="sub" style="margin-top:12px">Cases</div>');
-    h+=caseInputs(d,cs);
-    h+=casesIn(d)?sugLine(R):'<div class="sub">Not entered yet.</div>';
-    h+='<div class="row" style="margin-top:10px"><button class="btn sm" data-act="homeopen" data-d="'+d+'">Edit this day\u2019s roster</button></div>';
-  }else if(casesIn(d)){
-    h+='<div class="sub" style="margin-top:10px">\u2600 '+R.am+' morning \u00b7 \u263e '+R.pm+' afternoon cases'+(cs.th!=null?' \u00b7 '+esc(cs.th)+' theatres':'')+'</div>';
-  }
+  const cs=cases[d]||{};
+  if(casesIn(d)){
+    const bx=(l,v)=>'<div class="cbx"><b>'+(v!=null?esc(v):'\u2013')+'</b><span>'+l+'</span></div>';
+    h+='<div class="cgrid">'+bx('Total cases',R.n)+bx('Theatres',cs.th!=null?cs.th:null)+bx('\u2600 Morning cases',R.am)+bx('\u263e Afternoon cases',R.pm)+'</div>';
+  }else h+='<div class="sub" style="margin-top:12px">Cases not entered yet.</div>';
   return h+'</div>';
 }
 function checkCasesAlert(){
@@ -364,19 +374,18 @@ function staffHome(c,dates){
   else h+='<div class="banner">Next week’s roster hasn’t been published yet.</div>';
   if(later.length)h+='<div class="card" style="padding:16px 16px 6px"><div class="hl" style="font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--pri);font-weight:700">Later</div>'+myShiftRows(c,later,today)+'</div>';
   h+='<div class="row wrap" style="margin:6px 0 14px"><button class="btn pri" data-act="tab" data-v="avail">Change my availability</button></div>';
-  h+='<details class="card" style="padding:12px 16px"><summary><b>See the whole team’s roster</b></summary><div style="margin-top:10px">'+homeCards(c)+vSheet(c,dates)+dayCard(c,calSel)+'</div></details>';
+  h+='<h2>Team roster</h2>'+homeCards(c)+vSheet(c,dates);
   return h;
 }
 function vCal(c,dates){
   const today=iso(new Date());
   if(!calMonth)calMonth=today.slice(0,7);
-  if(!calSel)calSel=today;
   if(!isAdmin)return staffHome(c,dates);
   let h=emailPrompt()+homeCards(c);
   const calls=chgList().filter(x=>x.k==='cant'&&isOpen(x)),gaps=isAdmin?gapItems(c):[],caps=isAdmin?capItems(c):[];
   if(isAdmin&&(calls.length+gaps.length+caps.length))h+='<h2 style="margin-top:6px">Needs attention <span class="chip red">'+(calls.length+gaps.length+caps.length)+'</span></h2>'+attention(c,calls)+caps.map(g=>capCard(c,g)).join('')+gaps.map(g=>gapCard(c,g)).join('');
   h+=callPanel(c);
-  h+=vSheet(c,dates)+dayCard(c,calSel);
+  h+=vSheet(c,dates);
   return h;
 }
 function vMonth(c,today){
@@ -565,7 +574,8 @@ function vAvail(c,dates){
     h+='<div class="row" style="margin-top:14px"><button class="btn pri" data-act="saveav">Save availability</button><span class="sub">'+(draft.dirty?'Unsaved changes':draft.ts?'Saved '+esc(new Date(draft.ts).toLocaleString('en-AU',{weekday:'short',hour:'numeric',minute:'2-digit'})):'Not submitted yet')+'</span></div>';
   }
   h+='</div>';
-  h+='<h2>Everyone’s availability</h2><div class="legend sub"><span><i class="dot" style="background:var(--av)"></i>Free</span><span><i class="dot" style="background:var(--ot)"></i>Free + OT</span><span><i class="dot" style="background:var(--warn)"></i>Other (see notes)</span><span>– Not available</span><span>· Not entered</span></div><div class="legend sub"><span>AM / PM = only that half</span><span>★ prefers to work</span><span>↓ prefers not</span></div>';
+  const mineH=h;h='';
+  h+='<h2 style="margin-top:4px">Everyone’s availability</h2><div class="legend sub"><span><i class="dot" style="background:var(--av)"></i>Free</span><span><i class="dot" style="background:var(--ot)"></i>Free + OT</span><span><i class="dot" style="background:var(--warn)"></i>Other (see notes)</span><span>– Not available</span><span>· Not entered</span></div><div class="legend sub"><span>AM / PM = only that half</span><span>★ prefers to work</span><span>↓ prefers not</span></div>';
   h+='<div class="card grid"><table><tr><th></th>'+dates.map(d=>'<th>'+esc(parse(d).toLocaleDateString('en-AU',{weekday:'narrow'}))+'<br>'+parse(d).getDate()+'</th>').join('')+'<th>Want</th></tr>';
   const notes=[];
   c.staff.forEach(s=>{
@@ -579,7 +589,7 @@ function vAvail(c,dates){
   });
   h+='<tr><td><b>Free</b></td>'+dates.map(d=>'<td><b>'+c.staff.filter(s=>isFree(statusOf(s,d,c.start,avail))).length+'</b></td>').join('')+'<td></td></tr></table></div>';
   if(notes.length)h+='<div class="card"><h3>Notes</h3>'+notes.map(n=>'<div class="sub" style="padding:2px 0">'+esc(n)+'</div>').join('')+'</div>';
-  return h;
+  return h+mineH;
 }
 const fmtAgo=ts=>{const m=Math.round((Date.now()-ts)/60000);return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':Math.round(m/1440)+' d ago'};
 const chgList=()=>Object.keys(chg).map(k=>Object.assign({id:k},chg[k])).sort((a,b)=>(b.ts||0)-(a.ts||0));
@@ -821,7 +831,7 @@ function vSheet(c,dates){
   const dirty=Object.keys(sheetDraft).length;
   let h='';
   if(isAdmin){
-    h+='<div class="card"><div class="row wrap"><button class="btn pri sm" data-act="auto" data-v="next">Build next fortnight</button><button class="btn sm" data-act="auto" data-v="gaps">Add people where short</button><button class="btn sm ghost" data-act="clear">Clear</button><span class="sp"></span><button class="btn sm" data-act="pub">Publish</button></div><div class="row wrap" style="margin-top:8px"><button class="btn sm pri" data-act="shareimg" data-v="share">Share roster as image</button><button class="btn sm" data-act="shareimg" data-v="save">Save image</button><button class="btn sm ghost" data-act="shareimg" data-v="copy">Copy image</button></div><div class="sub" style="margin-top:8px">'+(c.pub?'Published through '+esc(dayLabel(c.pub))+'.':'Not published yet.')+' Tap a cell to change someone’s start time, then Save. Enter cases in the bottom rows.</div></div>';
+    h+='<div class="card"><div class="row wrap"><button class="btn pri sm" data-act="auto" data-v="next">Build next fortnight</button><button class="btn sm" data-act="auto" data-v="gaps">Add people where short</button><button class="btn sm ghost" data-act="clear">Clear</button><span class="sp"></span><button class="btn sm" data-act="pub">Publish</button></div><div class="row wrap" style="margin-top:8px"><button class="btn sm pri" data-act="shareimg" data-v="share">Share roster as image</button><button class="btn sm" data-act="shareimg" data-v="save">Save image</button><button class="btn sm ghost" data-act="shareimg" data-v="copy">Copy image</button></div><div class="sub" style="margin-top:8px">'+(c.pub?'Published through '+esc(dayLabel(c.pub))+'.':'Not published yet.')+' Tap a cell to change someone’s start time, then Save.</div></div>';
   }
   if(isAdmin)h+=helpCard(c);
   const offN=c.all.filter(s=>s.off).length,people=c.all.filter(s=>!s.off||showOff||dates.some(d=>effAsg(d).some(x=>x.s===s.id))).sort((a,b)=>a.name.localeCompare(b.name)),am=people.filter(s=>s.role==='AM'),pm=people.filter(s=>s.role==='PM'),mid=people.filter(s=>!s.role);
@@ -835,12 +845,8 @@ function vSheet(c,dates){
   const grp=t=>'<tr class="grp"><td colspan="'+(dates.length+1)+'">'+t+'</td></tr>';
   h+='<div class="card sheet"><table><tr><th class="nm"></th>'+wkj(dates.map((d,i)=>'<th data-act="cday" data-d="'+d+'" style="cursor:pointer;'+(i===5?'':'')+(d===calSel?'background:#f3dfe4':'')+'">'+esc(parse(d).toLocaleDateString('en-AU',{weekday:'short'}))+'<br>'+parse(d).getDate()+'</th>'))+'</tr>';
   h+=am.map(row).join('')+mid.map(row).join('')+pm.map(row).join('');
-  const tot=part=>'<tr class="tot"><td class="nm">'+(part==='am'?'☀ Staff':'☾ Staff')+'</td>'+wkj(dates.map(d=>{const R=dayReport(d,c,effAsg(d)),s=partStats(R,part);return '<td class="'+(!R.est&&s.short?'lo':'')+'">'+s.got+(R.est?'':'/'+s.need)+'</td>'}))+'</tr>';
+  const tot=part=>'<tr class="tot"><td class="nm">'+(part==='am'?'☀ Morning staff':'☾ Afternoon staff')+'</td>'+wkj(dates.map(d=>{const R=dayReport(d,c,effAsg(d)),s=partStats(R,part);return '<td class="'+(isAdmin&&!R.est&&s.short?'lo':'')+'">'+s.got+'</td>'}))+'</tr>';
   h+=tot('am')+tot('pm');
-  h+='<tr class="cs"><td class="nm">Cases</td>'+wkj(dates.map(d=>{const cs=cases[d]||{};return '<td>'+(isAdmin?'<input type="number" min="0" data-ch="ctot" data-d="'+d+'" value="'+(cs.n!=null?esc(cs.n):'')+'">':(cs.n!=null?esc(cs.n):'\u2013'))+'</td>'}))+'</tr><tr class="cs"><td class="nm">Theatres</td>'+wkj(dates.map(d=>{const cs=cases[d]||{};return '<td>'+(isAdmin?'<input type="number" min="0" data-ch="th" data-d="'+d+'" value="'+(cs.th!=null?esc(cs.th):'')+'">':(cs.th!=null?esc(cs.th):'\u2013'))+'</td>'}))+'</tr>';
-  ['am','pm'].forEach(p=>{
-    h+='<tr class="cs"><td class="nm">'+(p==='am'?'☀ Cases':'☾ Cases')+'</td>'+wkj(dates.map(d=>{const cs=cases[d]||{},v=cs[p];return '<td>'+(isAdmin?'<input type="number" min="0" data-ch="'+(p==='am'?'cam':'cpm')+'" data-d="'+d+'" value="'+(v!=null?esc(v):'')+'">':(v!=null?esc(v):'–'))+'</td>'}))+'</tr>';
-  });
   h+='</table></div>'+(isAdmin&&offN?'<div class="row" style="margin:6px 0"><button class="btn sm ghost" data-act="showoff">'+(showOff?'Hide':'Show')+' inactive staff ('+offN+')</button></div>':'')+'<div class="legend" style="margin:8px 4px 2px"><span><i class="dot" style="background:#fbd98a"></i>Morning start</span><span><i class="dot" style="background:#dcbfe8"></i>Afternoon start</span><span><i class="dot" style="background:#fbd98a;border-radius:3px;width:12px;height:12px;box-shadow:0 0 0 2.5px #1f7a4d"></i>&nbsp;Can do overtime</span><span><i class="dot" style="background:#C4320A"></i>Rostered but unavailable</span></div><div class="sub" style="margin:4px 4px 6px">Tap a date to open that day. The number is the start hour.</div>';
   if(isAdmin)h+=checkCard(c,dates);
   if(dirty){
@@ -993,7 +999,8 @@ document.addEventListener('click',async e=>{
   else if(a==='fn'){viewStart=addDays(c.start,+b.dataset.v);draft=null;calSel='';draw()}
   else if(a==='pt'){part=b.dataset.v;draw()}
   else if(a==='cm'){calMode=b.dataset.v;draw()}
-  else if(a==='cday'){calSel=d;calMonth=d.slice(0,7);hoursOpen='';addFor=null;draw()}
+  else if(a==='cday'){calSel=d;calMonth=d.slice(0,7);hoursOpen='';addFor=null;draw();const pg=document.querySelector('[data-pager]');if(pg)pg.scrollIntoView({behavior:'smooth',block:'start'})}
+  else if(a==='dstep'){const v=+b.dataset.v;let x=calSel;for(let i=0;i<10;i++){x=addDays(x,v);if(isWorking(x,c))break}calSel=x;calMonth=x.slice(0,7);hoursOpen='';addFor=null;draw()}
   else if(a==='mnav'){const p=calMonth.split('-').map(Number),dt=new Date(p[0],p[1]-1+ +b.dataset.v,1);calMonth=iso(dt).slice(0,7);draw()}
   else if(a==='mtoday'){calMonth=iso(new Date()).slice(0,7);calSel=iso(new Date());draw()}
   else if(a==='satclear'){await mutCfg(x=>{x.sat=''})}
